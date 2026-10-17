@@ -1,0 +1,28 @@
+{
+ "verze": "2026-10-16T20:21:21Z",
+ "vytvoreno": "2026-10-17T11:23:39Z",
+ "pocet": 91988,
+ "typy": [
+  "shop",
+  "amenity=bar",
+  "amenity=bicycle_rental",
+  "amenity=cafe",
+  "amenity=dentist",
+  "amenity=doctors",
+  "amenity=fast_food",
+  "amenity=fuel",
+  "amenity=pharmacy",
+  "amenity=pub",
+  "amenity=restaurant",
+  "amenity=veterinary",
+  "healthcare=optometrist",
+  "leisure=fitness_centre",
+  "organic=only",
+  "tourism=guest_house",
+  "tourism=hotel"
+ ],
+ "soubor": "prodejny.zip",
+ "velikost": 5129685,
+ "sha256": "156c6ef983d32561a24e908546e9795958848be80595c577f6e8912e2973126d",
+ "licence": "© přispěvatelé OpenStreetMap, ODbL 1.0"
+}
