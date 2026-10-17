@@ -1,0 +1,19 @@
+# Které prodejny se z mapy berou. Řádek „klíč“ = všechny hodnoty (shop = všechny obchody), „klíč=hodnota“ = jen tahle.
+# Když v aplikaci (lib/katalog.php) přibude druh, který není obchod (shop), přidej ho sem.
+shop
+amenity=bar
+amenity=bicycle_rental
+amenity=cafe
+amenity=dentist
+amenity=doctors
+amenity=fast_food
+amenity=fuel
+amenity=pharmacy
+amenity=pub
+amenity=restaurant
+amenity=veterinary
+healthcare=optometrist
+leisure=fitness_centre
+organic=only
+tourism=guest_house
+tourism=hotel

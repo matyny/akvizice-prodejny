@@ -1,0 +1,56 @@
+name: Prodejny z mapy
+
+# Jednou měsíčně stáhne výřez mapy Česka (Geofabrik, data OpenStreetMap) a připraví z něj balík prodejen pro Akviziční mapu.
+# Ručně: Actions → Prodejny z mapy → Run workflow.
+on:
+  schedule:
+    - cron: '41 3 2 * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  balik:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Nástroje
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q osmium-tool
+          pip install osmium
+
+      - name: Stáhnout mapu Česka
+        run: curl -fsSL --retry 3 -A "akvizice-prodejny (github.com/${{ github.repository }})" -o cz.osm.pbf https://download.geofabrik.de/europe/czech-republic-latest.osm.pbf
+
+      - name: Vybrat prodejny
+        run: |
+          python3 build.py filtr typy.txt > filtr.txt
+          cat filtr.txt
+          osmium tags-filter cz.osm.pbf -e filtr.txt -o prodejny.osm.pbf --overwrite
+          python3 build.py balik prodejny.osm.pbf typy.txt out
+
+      - name: Zveřejnit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view data >/dev/null 2>&1 || gh release create data --title "Prodejny z mapy" --notes "Balík prodejen pro Akviziční mapu. Data © přispěvatelé OpenStreetMap, ODbL 1.0."
+          gh release upload data out/prodejny.zip --clobber
+          gh release upload data out/meta.json --clobber
+
+      # zápis do repozitáře: GitHub jinak po 60 dnech bez změn naplánované spouštění vypne
+      - name: Zapsat poslední běh
+        run: |
+          cp out/meta.json posledni.json
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add posledni.json
+          git commit -m "Prodejny $(date -u +%Y-%m-%d)" || echo "beze změny"
+          git push
