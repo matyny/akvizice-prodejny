@@ -1,0 +1,87 @@
+# Které místa z Overture Maps (kategorie taxonomy.primary) se berou jako který druh prodejny aplikace (OSM značka jako v typy.txt).
+# Řádek: kategorie[,kategorie…]  klíč=hodnota  [+regex] [-regex]
+#   +regex = název musí obsahovat (malými písmeny bez diakritiky), -regex = název nesmí obsahovat.
+# Druh, který tu není, se bere jen z OpenStreetMap. Overture místo, které odpovídá prodejně z OpenStreetMap, ji jen potvrdí.
+
+# Zdraví a optika
+eyewear_store                  shop=optician            +optik|optic|ocni|bryl|vision|zrak|cock|eye|lens|fokus|dioptr
+optometry                      healthcare=optometrist   +optik|optic|optom|ocni|zrak|vision|bryl|dioptr
+pharmacy                       amenity=pharmacy         +lekarn|pharm|apotek|benu|dr\.max|drmax|ipc|alphega
+medical_supply_store           shop=medical_supply
+vitamin_and_supplement_store   shop=nutrition_supplements
+health_food_store,organic_grocery_store  shop=health_food
+dental_clinic                  amenity=dentist
+veterinarian                   amenity=veterinary
+# Sport a volný čas
+sporting_goods_store,sportswear_store  shop=sports
+bike_store                     shop=bicycle
+outdoor_store                  shop=outdoor
+ski_and_snowboard_store        shop=ski
+hunting_and_fishing_store      shop=fishing             +ryb|fish|rybar
+hunting_and_fishing_store,gun_and_ammo_store  shop=hunting  +lov|hunt|zbran|mysliv|gun|army
+scuba_diving_center            shop=scuba_diving
+gym                            leisure=fitness_centre
+musical_instrument_store       shop=musical_instrument
+# Móda
+clothing_store,womens_clothing_store,mens_clothing_store,childrens_clothing_store,lingerie_store  shop=clothes
+fashion_boutique               shop=boutique
+shoe_store                     shop=shoes
+jewelry_store                  shop=jewelry
+watch_store                    shop=watches
+luggage_store                  shop=bag
+fashion_accessories_store      shop=fashion_accessories
+# Krása
+beauty_salon,nail_salon        shop=beauty
+hair_salon,barber              shop=hairdresser
+cosmetics_and_fragrance_store,beauty_supply_store  shop=cosmetics
+drugstore                      shop=chemist
+massage_therapy                shop=massage
+tattoo_and_piercing            shop=tattoo
+# Děti a dárky
+toy_store                      shop=toys
+gift_shop,souvenir_store       shop=gift
+office_supply_store            shop=stationery
+bookstore,books_music_and_video_store  shop=books
+arts_crafts_and_hobby_store    shop=craft
+# Dům a zahrada
+furniture_store,mattress_store shop=furniture
+hardware_store                 shop=hardware
+home_improvement_store         shop=doityourself
+nursery_and_gardening_store    shop=garden_centre
+florist                        shop=florist
+home_goods_store,home_decor_store  shop=houseware
+paint_store                    shop=paint
+pet_store,aquatic_pet_store    shop=pet
+kitchen_and_bath_store         shop=bathroom_furnishing
+kitchen_supply_store           shop=kitchen
+# Potraviny a nápoje
+grocery_store                  shop=supermarket         +lidl|kaufland|albert|billa|penny|tesco|globus|coop|norma|makro|flop|terno|ratio
+grocery_store,convenience_store  shop=convenience       -lidl|kaufland|albert|billa|penny|tesco|globus|makro|ratio
+bakery                         shop=bakery
+butcher_shop                   shop=butcher
+liquor_store,beer_wine_spirits_store  shop=alcohol
+candy_store,chocolatier        shop=confectionery
+delicatessen                   shop=deli
+# Gastro a ubytování
+restaurant,czech_restaurant,italian_restaurant,asian_restaurant,vietnamese_restaurant,chinese_restaurant,indian_restaurant,sushi_restaurant,steakhouse,european_restaurant,eastern_european_restaurant,mexican_restaurant,vegetarian_restaurant,bar_and_grill_restaurant,barbecue_restaurant,buffet_restaurant,turkish_restaurant,diner  amenity=restaurant
+pizza_restaurant               amenity=restaurant
+cafe,coffee_shop,tea_room      amenity=cafe
+pub,gastropub,beer_bar,beer_garden  amenity=pub
+bar,cocktail_bar,wine_bar,lounge  amenity=bar
+fast_food_restaurant,burger_restaurant,doner_kebab_restaurant  amenity=fast_food
+hotel                          tourism=hotel
+guest_house,bed_and_breakfast,inn  tourism=guest_house
+# Auto-moto
+automotive_repair              shop=car_repair
+auto_dealer                    shop=car
+auto_parts_store               shop=car_parts
+tire_shop                      shop=tyres
+motorcycle_dealer              shop=motorcycle
+gas_station                    amenity=fuel
+# Elektro a služby
+electronics_store,appliance_store  shop=electronics
+computer_store                 shop=computer
+mobile_phone_store             shop=mobile_phone
+camera_and_photography_store   shop=photo
+tobacco_shop                   shop=tobacco
+dry_cleaning                   shop=dry_cleaning
