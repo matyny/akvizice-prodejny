@@ -1,0 +1,32 @@
+{
+ "verze": "2026-10-20T20:23:47Z",
+ "vytvoreno": "2026-10-23T11:03:50Z",
+ "pocet": 156614,
+ "typy": [
+  "shop",
+  "amenity=bar",
+  "amenity=bicycle_rental",
+  "amenity=cafe",
+  "amenity=dentist",
+  "amenity=doctors",
+  "amenity=fast_food",
+  "amenity=fuel",
+  "amenity=pharmacy",
+  "amenity=pub",
+  "amenity=restaurant",
+  "amenity=veterinary",
+  "healthcare=optometrist",
+  "leisure=fitness_centre",
+  "organic=only",
+  "tourism=guest_house",
+  "tourism=hotel"
+ ],
+ "soubor": "prodejny.zip",
+ "velikost": 10363129,
+ "sha256": "4873c6de5426391ae1c926d136232e1e510f224e91588d0357e5a466deb18bbd",
+ "licence": "© přispěvatelé OpenStreetMap, ODbL 1.0 · Overture Maps Foundation, CDLA Permissive 2.0 / Apache 2.0 · Registr osob (DIA), RÚIAN (ČÚZK), RES (ČSÚ)",
+ "overture": "2026-10-21.0",
+ "overture_potvrzeno": 46340,
+ "overture_novych": 64977,
+ "ukoncene": 2006
+}
