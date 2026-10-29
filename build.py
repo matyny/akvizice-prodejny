@@ -1,20 +1,25 @@
 #!/usr/bin/env python3
 """
-Akviziční mapa – měsíční balík prodejen z OpenStreetMap (výřez Česka z Geofabriku), doplněný o Overture Maps
-a o ukončené provozovny z Registru osob.
+Akviziční mapa – měsíční balík prodejen z OpenStreetMap (výřez Česka z Geofabriku), doplněný o Overture Maps,
+Foursquare OS Places a o ukončené provozovny z Registru osob.
 
   python3 build.py filtr typy.txt > filtr.txt                    výraz pro „osmium tags-filter“
   python3 build.py balik prodejny.osm.pbf typy.txt out [ZDROJE]   vytvoří out/prodejny.zip a out/meta.json
-      ZDROJE = složka z zdroje.py (overture.csv.gz, provozovny.csv.gz, ukoncene.csv.gz); co v ní chybí, se vynechá.
+      ZDROJE = složka z zdroje.py (overture.csv.gz, foursquare.csv.gz, provozovny.csv.gz, ukoncene.csv.gz); co v ní chybí, se vynechá.
 
 V ZIPu je pro každou dlaždici a druh prodejny jeden soubor „X_Y/klic=hodnota.json“ – seznam [id, lat, lon, {značky}, {zdroje}]:
   id    „node/123“, „way/…“, „relation/…“ (OpenStreetMap), nebo „ovt/<id>“ (prodejna jen z Overture Maps),
   zdroje (jen když je co říct): „o“ = jistota Overture 0–1 (prodejnu zná i Overture), „k“ = datum, kdy firma prodejny
-        v tomto místě ukončila provozovnu a jinou tu nemá (prodejna nejspíš zavřela).
-Prodejna z OpenStreetMap bez „o“ Overture nezná (když balík Overture obsahuje – meta.json „overture“).
+        v tomto místě ukončila provozovnu a jinou tu nemá (prodejna nejspíš zavřela),
+        „z“ = kdo prodejnu vede jako zavřenou: „o“ Overture (trvale zavřeno), „f“ Foursquare (a žádný jejich otevřený záznam ji nepotvrzuje),
+        „f“ = datum, kdy Foursquare prodejnu naposledy něčím ověřil (jejich otevřený záznam se stejným jménem do 120 m),
+        „u“ = poslední úprava nebo kontrola v OpenStreetMap, jen když je starší než 3 roky.
+Prodejna z OpenStreetMap bez „o“ Overture nezná (když balík Overture obsahuje – meta.json „overture“), bez „f“ ji nezná
+Foursquare (meta.json „foursquare“). Zavřená místa (OSM: datum ukončení v minulosti, otevírací doba „closed“/„off“,
+disused/abandoned) se do balíku neberou.
 Síť dlaždic musí sedět s aplikací (lib/geo.php: AM_LON0, AM_LAT0, AM_DLON, AM_DLAT, AM_TX_MAX, AM_TY_MAX).
 Data © přispěvatelé OpenStreetMap (ODbL 1.0), Overture Maps Foundation (CDLA Permissive 2.0 / Apache 2.0),
-Registr osob (Digitální a informační agentura), RÚIAN (ČÚZK, CC BY 4.0), RES (ČSÚ).
+Foursquare OS Places (Apache 2.0), Registr osob (Digitální a informační agentura), RÚIAN (ČÚZK, CC BY 4.0), RES (ČSÚ).
 """
 import collections
 import csv
@@ -50,6 +55,10 @@ M_SHODA_JMENO = 120             # Overture × OSM: stejné jméno do 120 m
 M_SHODA_MISTO = 25              # … nebo stejný druh do 25 m
 M_KONEC = 40                    # ukončená provozovna firmy se jménem prodejny do 40 m
 M_FIRMA_JINDE = 100             # … a stejná firma tu nemá jinou aktivní provozovnu do 100 m
+OSM_STARY_DNI = 3 * 365         # „u“ (poslední úprava v OSM) se do balíku píše jen u starších záznamů – kvůli velikosti
+FSQ_VLAJKA_DNI = 2 * 365        # hlášení „zavřeno“ od uživatelů Foursquare (neověřené) platí, jen když místo dlouho nikdo neověřil
+DNES = datetime.date.today()
+DATUM = re.compile(r'^\d{4}-\d{2}-\d{2}')
 
 OBECNA = set('''prodejna obchod shop store centrum studio servis spol sro s r o a as cz the and der die das pro pod nad
 optika optik optic optics ocni opticke sport sports cyklo kola bike bikes outdoor velo potraviny market supermarket
@@ -82,6 +91,30 @@ def jmeno_sedi(a, b, adresa=''):
 
 def vzdal(la1, lo1, la2, lo2):
     return math.hypot((lo1 - lo2) * 111320 * math.cos(math.radians(la1)), (la1 - la2) * 111320)
+
+
+def ukonceno(tags):
+    """Je místo podle značek OpenStreetMap už zavřené? (datum ukončení v minulosti, „closed“, disused/abandoned)"""
+    if tags.get('disused') == 'yes' or tags.get('abandoned') == 'yes' or tags.get('opening_hours', '').strip().lower() in ('closed', 'off'):
+        return True
+    m = re.match(r'^(\d{4})(?:-(\d{2}))?(?:-(\d{2}))?$', tags.get('end_date', '').strip())
+    if m:
+        y, mo, d = int(m.group(1)), int(m.group(2) or 12), int(m.group(3) or 28)
+        try:
+            return datetime.date(y, max(1, min(12, mo)), max(1, min(28, d))) <= DNES
+        except ValueError:
+            return False
+    return False
+
+
+def posledni_uprava(tags, kdy):
+    """Kdy se záznamu v OSM naposledy někdo dotkl: čas poslední verze, nebo novější datum kontroly v terénu (check_date)."""
+    out = kdy.strftime('%Y-%m-%d') if kdy is not None and kdy.year > 2004 else ''
+    for k in ('check_date', 'survey:date', 'check_date:opening_hours', 'source:date'):
+        v = tags.get(k, '').strip()
+        if re.match(r'^\d{4}-\d{2}(-\d{2})?$', v):
+            out = max(out, v if len(v) == 10 else v + '-01')
+    return out
 
 
 class Mrizka:
@@ -140,6 +173,7 @@ class Sber(osmium.SimpleHandler):
         self.kose = {}        # (tx, ty, 'klic=hodnota') -> {id: [id, lat, lon, značky, zdroje]}
         self.pocet = 0
         self.sdilena = 0
+        self.ukoncenych = 0
 
     def druhy(self, tags):
         out = []
@@ -157,22 +191,28 @@ class Sber(osmium.SimpleHandler):
             self.sdilena += 1
         return out
 
-    def uloz(self, typ, oid, lat, lon, tags):
+    def uloz(self, typ, oid, lat, lon, tags, kdy=None):
         druhy = self.druhy(tags)
         if not druhy:
+            return
+        if ukonceno(tags):
+            self.ukoncenych += 1
             return
         tx, ty = int((lon - LON0) // DLON), int((lat - LAT0) // DLAT)
         if not (0 <= tx <= TX_MAX and 0 <= ty <= TY_MAX):
             return
         znacky = {k: v for k, v in tags if k in UDAJE or k in self.klice or k == 'disused:shop'}
         zaznam = [f'{typ}/{oid}', round(lat, 7), round(lon, 7), znacky, {}]
+        u = posledni_uprava(tags, kdy)
+        if u and u < (DNES - datetime.timedelta(days=OSM_STARY_DNI)).isoformat():
+            zaznam[4]['u'] = u
         for d in druhy:
             self.kose.setdefault((tx, ty, d), {})[zaznam[0]] = zaznam
         self.pocet += 1
 
     def node(self, n):
         if n.tags and n.location.valid():
-            self.uloz('node', n.id, n.location.lat, n.location.lon, n.tags)
+            self.uloz('node', n.id, n.location.lat, n.location.lon, n.tags, n.timestamp)
 
     def way(self, w):
         if not w.tags or not self.druhy(w.tags):
@@ -180,7 +220,7 @@ class Sber(osmium.SimpleHandler):
         body = [(nd.location.lat, nd.location.lon) for nd in w.nodes if nd.location.valid()]
         if body:   # střed obdélníku kolem prodejny – stejně jako „out center“ v Overpass
             la, lo = [p[0] for p in body], [p[1] for p in body]
-            self.uloz('way', w.id, (min(la) + max(la)) / 2, (min(lo) + max(lo)) / 2, w.tags)
+            self.uloz('way', w.id, (min(la) + max(la)) / 2, (min(lo) + max(lo)) / 2, w.tags, w.timestamp)
 
     def area(self, a):
         if a.from_way() or not a.tags or not self.druhy(a.tags):
@@ -191,7 +231,7 @@ class Sber(osmium.SimpleHandler):
                 if nd.location.valid():
                     la.append(nd.lat); lo.append(nd.lon)
         if la:
-            self.uloz('relation', a.orig_id(), (min(la) + max(la)) / 2, (min(lo) + max(lo)) / 2, a.tags)
+            self.uloz('relation', a.orig_id(), (min(la) + max(la)) / 2, (min(lo) + max(lo)) / 2, a.tags, a.timestamp)
 
 
 def nacti_mapovani(soubor, druhy_balik):
@@ -228,7 +268,9 @@ def adresa_ovt(adresa, obec):
 
 
 def pridej_overture(h, slozka, mapovani):
-    """Overture místa: potvrdí prodejnu z OSM (zdroje „o“), nebo přibude jako nová „ovt/…“. Vrací (potvrzeno, nových)."""
+    """Overture místa: potvrdí prodejnu z OSM (zdroje „o“), nebo přibude jako nová „ovt/…“.
+    Trvale zavřené místo Overture se stejným jménem do 120 m označí prodejnu z OSM jako zavřenou (zdroje „z“ += „o“),
+    pokud ji zároveň nepotvrzuje otevřený záznam Overture. Vrací (potvrzeno, nových, zavřených)."""
     osm = Mrizka()
     vse = {}
     for (tx, ty, d), prvky in h.kose.items():
@@ -242,10 +284,14 @@ def pridej_overture(h, slozka, mapovani):
             druhy_zaznamu[z[0]].add(d)
     nove = Mrizka()
     potvrzeno, novych = 0, 0
+    zavrena = []
     with gzip.open(os.path.join(slozka, 'overture.csv.gz'), 'rt', encoding='utf-8') as f:
         for r in csv.DictReader(f):
+            if (r.get('stav') or '') in ('permanently_closed', 'closed'):
+                zavrena.append(r)                         # jakákoli kategorie – stačí stejné jméno
+                continue
             pravidla = mapovani.get(r['kat'] or '')
-            if not pravidla or (r.get('stav') or '') in ('permanently_closed', 'closed'):
+            if not pravidla:
                 continue
             nazev = (r['nazev'] or '').strip()
             n = norm(nazev)
@@ -292,7 +338,72 @@ def pridej_overture(h, slozka, mapovani):
                 h.kose.setdefault((tx, ty, d), {})[zaznam[0]] = zaznam
             nove.pridej(la, lo, zaznam)
             novych += 1
-    return potvrzeno, novych
+    zavrenych = set()
+    for r in zavrena:
+        nazev = (r['nazev'] or '').strip()
+        try:
+            la, lo = float(r['lat']), float(r['lon'])
+        except ValueError:
+            continue
+        if not nazev:
+            continue
+        nejlepsi = None
+        for d, z in osm.okolo(la, lo, M_SHODA_JMENO):
+            if jmeno_sedi(nazev, z[3].get('name') or z[3].get('brand') or '', r['adresa'] or '') and (nejlepsi is None or d < nejlepsi[0]):
+                nejlepsi = (d, z)
+        if nejlepsi and 'o' not in nejlepsi[1][4]:      # otevřený záznam Overture ji potvrzuje – nechá se
+            z = nejlepsi[1]
+            if 'o' not in z[4].get('z', ''):
+                z[4]['z'] = z[4].get('z', '') + 'o'
+            zavrenych.add(z[0])
+    return potvrzeno, novych, len(zavrenych)
+
+
+def pridej_foursquare(h, slozka):
+    """Foursquare OS Places: místo se stejným jménem do 120 m. Otevřené → zdroje „f“ = kdy ho Foursquare naposledy ověřil;
+    zavřené (datum zavření, nebo neověřené hlášení „zavřeno“/„neexistuje“ u místa, které 2 roky nikdo neověřil) a žádné
+    otevřené se stejným jménem → zdroje „z“ += „f“. Vrací (potvrzeno, zavřených)."""
+    mr = Mrizka()
+    vse = {}
+    for prvky in h.kose.values():
+        for z in prvky.values():
+            if z[0] not in vse:
+                vse[z[0]] = z
+                mr.pridej(z[1], z[2], z)
+    otevrene, zavrene = {}, set()
+    hranice_vlajky = (DNES - datetime.timedelta(days=FSQ_VLAJKA_DNI)).isoformat()
+    with gzip.open(os.path.join(slozka, 'foursquare.csv.gz'), 'rt', encoding='utf-8') as f:
+        for r in csv.DictReader(f):
+            nazev = (r['nazev'] or '').strip()
+            if not nazev:
+                continue
+            try:
+                la, lo = float(r['lat']), float(r['lon'])
+            except ValueError:
+                continue
+            obnoveno = (r.get('obnoveno') or '')[:10] if DATUM.match(r.get('obnoveno') or '') else ''
+            vlajky = set((r.get('vlajky') or '').replace(',', ' ').split())
+            zavreno = bool((r.get('zavreno') or '').strip()) or (bool(vlajky & {'closed', 'doesnt_exist'}) and obnoveno < hranice_vlajky)
+            nejlepsi = None
+            for d, z in mr.okolo(la, lo, M_SHODA_JMENO):
+                if jmeno_sedi(nazev, z[3].get('name') or z[3].get('brand') or '', r.get('adresa') or '') and (nejlepsi is None or d < nejlepsi[0]):
+                    nejlepsi = (d, z)
+            if not nejlepsi:
+                continue
+            zid = nejlepsi[1][0]
+            if zavreno:
+                zavrene.add(zid)
+            else:
+                otevrene[zid] = max(otevrene.get(zid, ''), obnoveno)
+    for zid, ob in otevrene.items():
+        if ob:
+            vse[zid][4]['f'] = ob
+    jen_zavrene = zavrene - set(otevrene)
+    for zid in jen_zavrene:
+        z = vse[zid]
+        if 'f' not in z[4].get('z', ''):
+            z[4]['z'] = z[4].get('z', '') + 'f'
+    return len(otevrene), len(jen_zavrene)
 
 
 def oznac_ukoncene(h, slozka):
@@ -339,7 +450,7 @@ def balik(pbf, typy, vystup, zdroje=None):
     cele, pary = nacti_typy(typy)
     h = Sber(cele, pary)
     h.apply_file(pbf, locations=True)
-    print(f'z OpenStreetMap: {h.pocet}, stojanů sdílených kol vynecháno: {h.sdilena}')
+    print(f'z OpenStreetMap: {h.pocet}, stojanů sdílených kol vynecháno: {h.sdilena}, už zavřených (podle značek) vynecháno: {h.ukoncenych}')
 
     hl = osmium.io.Reader(pbf, osmium.osm.osm_entity_bits.NOTHING)
     stav = hl.header().get('osmosis_replication_timestamp') or hl.header().get('timestamp') or ''
@@ -349,17 +460,26 @@ def balik(pbf, typy, vystup, zdroje=None):
     druhy_balik = cele | {f'{k}={v}' for k in pary for v in pary[k]}
     if zdroje and os.path.isfile(os.path.join(zdroje, 'overture.csv.gz')):
         mapovani = nacti_mapovani(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'overture.txt'), druhy_balik)
-        potvrzeno, novych = pridej_overture(h, zdroje, mapovani)
+        potvrzeno, novych, zavrenych = pridej_overture(h, zdroje, mapovani)
         rel = open(os.path.join(zdroje, 'overture.txt')).read().strip() if os.path.isfile(os.path.join(zdroje, 'overture.txt')) else ''
         meta_navic['overture'] = rel or 'ano'
         meta_navic['overture_potvrzeno'] = potvrzeno
         meta_navic['overture_novych'] = novych
-        print(f'Overture: potvrzeno {potvrzeno} prodejen z mapy, nových {novych}')
+        meta_navic['overture_zavrenych'] = zavrenych
+        print(f'Overture: potvrzeno {potvrzeno} prodejen z mapy, nových {novych}, zavřených {zavrenych}')
+    if zdroje and os.path.isfile(os.path.join(zdroje, 'foursquare.csv.gz')):
+        potvrzeno, zavrenych = pridej_foursquare(h, zdroje)
+        rel = open(os.path.join(zdroje, 'foursquare.txt')).read().strip() if os.path.isfile(os.path.join(zdroje, 'foursquare.txt')) else ''
+        meta_navic['foursquare'] = rel or 'ano'
+        meta_navic['foursquare_potvrzeno'] = potvrzeno
+        meta_navic['foursquare_zavrenych'] = zavrenych
+        print(f'Foursquare: potvrzeno {potvrzeno} prodejen, zavřených {zavrenych}')
     if zdroje and all(os.path.isfile(os.path.join(zdroje, f)) for f in ('provozovny.csv.gz', 'ukoncene.csv.gz')):
         meta_navic['ukoncene'] = oznac_ukoncene(h, zdroje)
         print(f"prodejen s ukončenou provozovnou: {meta_navic['ukoncene']}")
 
     os.makedirs(vystup, exist_ok=True)
+    meta_navic['osm_ukoncenych'] = h.ukoncenych
     cesta = os.path.join(vystup, 'prodejny.zip')
     with zipfile.ZipFile(cesta, 'w', zipfile.ZIP_DEFLATED, compresslevel=9) as z:
         for (tx, ty, d), prvky in sorted(h.kose.items()):
@@ -377,9 +497,15 @@ def balik(pbf, typy, vystup, zdroje=None):
         'velikost': os.path.getsize(cesta),
         'sha256': sha,
         'licence': '© přispěvatelé OpenStreetMap, ODbL 1.0' + (' · Overture Maps Foundation, CDLA Permissive 2.0 / Apache 2.0' if 'overture' in meta_navic else '')
+                   + (' · Foursquare OS Places, Apache 2.0' if 'foursquare' in meta_navic else '')
                    + (' · Registr osob (DIA), RÚIAN (ČÚZK), RES (ČSÚ)' if 'ukoncene' in meta_navic else ''),
         **meta_navic,
     }
+    # Foursquare: licence Apache 2.0 chce u šířených dat jejich NOTICE – jde do vydání vedle balíku
+    notice = os.path.join(zdroje or '', 'foursquare-NOTICE.txt')
+    if 'foursquare' in meta_navic and zdroje and os.path.isfile(notice):
+        with open(notice, 'rb') as a, open(os.path.join(vystup, 'NOTICE-foursquare.txt'), 'wb') as b:
+            b.write(a.read())
     with open(os.path.join(vystup, 'meta.json'), 'w', encoding='utf-8') as f:
         json.dump(meta, f, ensure_ascii=False, indent=1)
     print(f"prodejen: {pocet}, souborů v ZIPu: {len(h.kose)}, velikost: {meta['velikost'] / 1048576:.1f} MB, data k {meta['verze']}")

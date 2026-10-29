@@ -1,6 +1,6 @@
 name: Prodejny z mapy
 
-# Jednou měsíčně stáhne výřez mapy Česka (Geofabrik, data OpenStreetMap), místa z Overture Maps a registr provozoven
+# Jednou měsíčně stáhne výřez mapy Česka (Geofabrik, data OpenStreetMap), místa z Overture Maps a Foursquare a registr provozoven
 # a připraví z nich balík prodejen pro Akviziční mapu. Ručně: Actions → Prodejny z mapy → Run workflow.
 on:
   schedule:
@@ -40,6 +40,14 @@ jobs:
         continue-on-error: true
         run: python3 zdroje.py overture zdroje
 
+      # Foursquare OS Places (zdarma, Apache 2.0): pozná zavřená místa. Potřebuje tajemství HF_TOKEN – bez něj se krok přeskočí.
+      - name: Foursquare
+        continue-on-error: true
+        timeout-minutes: 60
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: python3 zdroje.py foursquare zdroje
+
       - name: Registr provozoven
         continue-on-error: true
         run: python3 zdroje.py registr zdroje
@@ -57,9 +65,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release view data >/dev/null 2>&1 || gh release create data --title "Prodejny z mapy" --notes "Balík prodejen pro Akviziční mapu. Data © přispěvatelé OpenStreetMap (ODbL 1.0), Overture Maps Foundation (CDLA Permissive 2.0 / Apache 2.0), Registr osob, RÚIAN, RES."
+          gh release view data >/dev/null 2>&1 || gh release create data --title "Prodejny z mapy" --notes "Balík prodejen pro Akviziční mapu. Data © přispěvatelé OpenStreetMap (ODbL 1.0), Overture Maps Foundation (CDLA Permissive 2.0 / Apache 2.0), Foursquare OS Places (Apache 2.0, viz NOTICE-foursquare.txt), Registr osob, RÚIAN, RES."
           gh release upload data out/prodejny.zip --clobber
           gh release upload data out/meta.json --clobber
+          if [ -f out/NOTICE-foursquare.txt ]; then gh release upload data out/NOTICE-foursquare.txt --clobber; fi
 
       # zápis do repozitáře: GitHub jinak po 60 dnech bez změn naplánované spouštění vypne
       - name: Zapsat poslední běh
