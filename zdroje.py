@@ -3,14 +3,16 @@
 Akviziční mapa – další zdroje k měsíčnímu balíku prodejen (běží na GitHubu, ne na hostingu aplikace).
 
   python3 zdroje.py overture CIL     místa z Overture Maps v Česku → CIL/overture.csv.gz
+  python3 zdroje.py foursquare CIL   místa z Foursquare OS Places v Česku → CIL/foursquare.csv.gz (+ NOTICE)
+                                     potřebuje proměnnou HF_TOKEN (Hugging Face, přístup k datasetu foursquare/fsq-os-places)
   python3 zdroje.py registr CIL      provozovny z Registru osob s polohou z RÚIAN a názvem firmy z RES ČSÚ
                                      → CIL/provozovny.csv.gz (aktivní) a CIL/ukoncene.csv.gz (ukončené za poslední 3 roky)
 
 Když se zdroj nepodaří stáhnout, skript skončí chybou a balík se postaví jen z OpenStreetMap (jako dřív).
-Data: Overture Maps Foundation (CDLA Permissive 2.0 / Apache 2.0), Digitální a informační agentura (Registr osob),
+Data: Overture Maps Foundation (CDLA Permissive 2.0 / Apache 2.0), Foursquare OS Places (Apache 2.0), Digitální a informační agentura (Registr osob),
 ČÚZK (RÚIAN, CC BY 4.0), ČSÚ (RES) – otevřená data.
 """
-import csv, datetime, gzip, io, os, subprocess, sys, time, urllib.request, zipfile
+import csv, datetime, gzip, io, json, os, re, subprocess, sys, time, urllib.request, zipfile
 
 csv.field_size_limit(10**9)
 UA = 'akvizice-prodejny (github.com/matyny/akvizice-prodejny)'
@@ -61,6 +63,56 @@ def overture(cil):
     log('Overture míst', pocet)
     if pocet < 100000:
         raise SystemExit('podezřele málo míst z Overture')
+
+
+FSQ = 'foursquare/fsq-os-places'
+
+
+def foursquare(cil):
+    """Foursquare OS Places (zdarma, Apache 2.0) – jen Česko a jen to, co je potřeba k poznání zavřených míst."""
+    import duckdb
+    token = os.environ.get('HF_TOKEN', '').strip()
+    if not token:
+        raise SystemExit('chybí HF_TOKEN (tajemství repozitáře) – Foursquare se vynechá')
+    if not re.match(r'^[A-Za-z0-9_\-]+$', token):
+        raise SystemExit('HF_TOKEN má nečekaný tvar')
+    hl = {'Authorization': f'Bearer {token}', 'User-Agent': UA}
+    with urllib.request.urlopen(urllib.request.Request(f'https://huggingface.co/api/datasets/{FSQ}/tree/main/release', headers=hl), timeout=60) as r:
+        polozky = json.load(r)
+    rel = sorted(x['path'].rsplit('/', 1)[-1] for x in polozky if x.get('type') == 'directory' and re.search(r'dt=\d{4}-\d{2}-\d{2}$', x['path']))[-1]
+    log('Foursquare release', rel)
+    # licence Apache 2.0: k šířeným datům patří jejich NOTICE
+    try:
+        with urllib.request.urlopen(urllib.request.Request(f'https://huggingface.co/datasets/{FSQ}/resolve/main/NOTICE.txt', headers=hl), timeout=60) as r, \
+                open(f'{cil}/foursquare-NOTICE.txt', 'wb') as f:
+            f.write(r.read())
+    except Exception as e:
+        log('NOTICE se nepodařilo stáhnout', e)
+    con = duckdb.connect()
+    con.execute('INSTALL httpfs; LOAD httpfs;')
+    con.execute(f"CREATE SECRET fsq (TYPE HUGGINGFACE, TOKEN '{token}')")
+    src = f"read_parquet('hf://datasets/{FSQ}/release/{rel}/places/parquet/*.parquet')"
+    w, s, e, n = CR
+    sloupce = {r[0] for r in con.execute(f'DESCRIBE SELECT * FROM {src}').fetchall()}
+    for nutny in ('fsq_place_id', 'name', 'latitude', 'longitude', 'country', 'date_refreshed', 'date_closed'):
+        if nutny not in sloupce:
+            raise SystemExit('data Foursquare mají jiný tvar, chybí ' + nutny)
+    vlajky = "array_to_string(unresolved_flags, ' ')" if 'unresolved_flags' in sloupce else "''"
+    adresa = 'address' if 'address' in sloupce else "''"
+    q = f"""SELECT fsq_place_id AS id, name AS nazev, round(latitude, 6) AS lat, round(longitude, 6) AS lon,
+              CAST(date_refreshed AS VARCHAR) AS obnoveno, CAST(date_closed AS VARCHAR) AS zavreno, {vlajky} AS vlajky, {adresa} AS adresa
+            FROM {src} WHERE country = 'CZ' AND latitude BETWEEN {s} AND {n} AND longitude BETWEEN {w} AND {e} AND name IS NOT NULL"""
+    # nejdřív do dočasného souboru – nedokončené stažení nesmí zůstat jako platný zdroj
+    tmp = f'{cil}/foursquare.tmp.csv.gz'
+    con.execute(f"COPY ({q}) TO '{tmp}' (HEADER, COMPRESSION gzip)")
+    pocet = con.execute(f"SELECT COUNT(*) FROM read_csv_auto('{tmp}')").fetchone()[0]
+    log('Foursquare míst', pocet)
+    if pocet < 50000:
+        os.remove(tmp)
+        raise SystemExit('podezřele málo míst z Foursquare')
+    os.replace(tmp, f'{cil}/foursquare.csv.gz')
+    with open(f'{cil}/foursquare.txt', 'w') as f:
+        f.write(rel)
 
 
 def registr(cil):
@@ -154,7 +206,7 @@ def registr(cil):
 
 
 if __name__ == '__main__':
-    if len(sys.argv) != 3 or sys.argv[1] not in ('overture', 'registr'):
+    if len(sys.argv) != 3 or sys.argv[1] not in ('overture', 'foursquare', 'registr'):
         sys.exit(__doc__)
     os.makedirs(sys.argv[2], exist_ok=True)
-    {'overture': overture, 'registr': registr}[sys.argv[1]](sys.argv[2])
+    {'overture': overture, 'foursquare': foursquare, 'registr': registr}[sys.argv[1]](sys.argv[2])
