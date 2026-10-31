@@ -8,6 +8,8 @@ Jednou měsíčně připraví balík prodejen v Česku pro Akviziční mapu.
   - **OpenStreetMap** (výřez mapy Česka od Geofabriku) – základ; které druhy prodejen se berou: `typy.txt`. Stojany sdílených kol se vynechávají.
   - **Overture Maps** (firemní stránky, Foursquare, Microsoft) – potvrdí prodejnu z mapy a doplní ty, které na mapě chybí;
     které kategorie odpovídají kterému druhu: `overture.txt`.
+  - **Overture – jméno člověka bez provozovny**: místo jen z Overture, jehož název je jen jméno člověka („Robert Dominik“)
+    a v domě není žádná provozovna z rejstříku, se nebere – bývá to sídlo živnostníka v bytě, ne prodejna.
   - **Overture – trvale zavřená místa**: prodejna z mapy, kterou Overture vede jako trvale zavřenou (a žádný jejich otevřený
     záznam ji nepotvrzuje), se označí jako zavřená.
   - **Foursquare OS Places** (zdarma, Apache 2.0) – kdy místo naposledy ověřili, nebo že je zavřené. Potřebuje přístupový klíč:
