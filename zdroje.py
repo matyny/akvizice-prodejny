@@ -7,6 +7,8 @@ Akviziční mapa – další zdroje k měsíčnímu balíku prodejen (běží na
                                      potřebuje proměnnou HF_TOKEN (Hugging Face, přístup k datasetu foursquare/fsq-os-places)
   python3 zdroje.py registr CIL      provozovny z Registru osob s polohou z RÚIAN a názvem firmy z RES ČSÚ
                                      → CIL/provozovny.csv.gz (aktivní) a CIL/ukoncene.csv.gz (ukončené za poslední 3 roky)
+                                     a všechna adresní místa RÚIAN → CIL/adresy.csv.gz (kód, poloha, adresa) pro přichycení
+                                     prodejen k adresám
 
 Když se zdroj nepodaří stáhnout, skript skončí chybou a balík se postaví jen z OpenStreetMap (jako dřív).
 Data: Overture Maps Foundation (CDLA Permissive 2.0 / Apache 2.0), Foursquare OS Places (Apache 2.0), Digitální a informační agentura (Registr osob),
@@ -99,8 +101,9 @@ def foursquare(cil):
             raise SystemExit('data Foursquare mají jiný tvar, chybí ' + nutny)
     vlajky = "array_to_string(unresolved_flags, ' ')" if 'unresolved_flags' in sloupce else "''"
     adresa = 'address' if 'address' in sloupce else "''"
+    kat = "fsq_category_labels[1]" if 'fsq_category_labels' in sloupce else "''"
     q = f"""SELECT fsq_place_id AS id, name AS nazev, round(latitude, 6) AS lat, round(longitude, 6) AS lon,
-              CAST(date_refreshed AS VARCHAR) AS obnoveno, CAST(date_closed AS VARCHAR) AS zavreno, {vlajky} AS vlajky, {adresa} AS adresa
+              CAST(date_refreshed AS VARCHAR) AS obnoveno, CAST(date_closed AS VARCHAR) AS zavreno, {vlajky} AS vlajky, {adresa} AS adresa, {kat} AS kat
             FROM {src} WHERE country = 'CZ' AND latitude BETWEEN {s} AND {n} AND longitude BETWEEN {w} AND {e} AND name IS NOT NULL"""
     # nejdřív do dočasného souboru – nedokončené stažení nesmí zůstat jako platný zdroj
     tmp = f'{cil}/foursquare.tmp.csv.gz'
@@ -113,6 +116,19 @@ def foursquare(cil):
     os.replace(tmp, f'{cil}/foursquare.csv.gz')
     with open(f'{cil}/foursquare.txt', 'w') as f:
         f.write(rel)
+
+
+def adresa_text(c):
+    """Adresa z řádku RÚIAN ve stejném tvaru jako v aplikaci (lib/provozovny.php adrText):
+    „Husova třída 97/12a, Dolejší Předměstí, 34401 Domažlice“."""
+    t = lambda i: (c[i] if i < len(c) else '').strip()
+    obec, cast, ulice, typ, cdom, cor, znak, psc = t(2), t(8), t(10), t(11), t(12), t(13), t(14), t(15)
+    cislo = ('č. ev. ' if typ.startswith('č.ev') else '') + cdom + ('/' + cor + znak if cor else '')
+    casti = [((ulice or cast or obec) + ' ' + cislo).strip()]
+    if ulice and cast and cast != obec:
+        casti.append(cast)
+    casti.append((psc + ' ' + obec).strip())
+    return ', '.join(casti)
 
 
 def registr(cil):
@@ -170,11 +186,15 @@ def registr(cil):
     else:
         raise SystemExit('adresy RÚIAN se nepodařilo stáhnout')
     body = {}
-    with zipfile.ZipFile('adr.zip') as z:
+    vsech = 0
+    # všechna adresní místa jdou i do adresy.csv.gz (přichycení prodejen k adrese); do dočasného souboru, ať nedokončený nezůstane
+    with zipfile.ZipFile('adr.zip') as z, gzip.open(f'{cil}/adresy.tmp.csv.gz', 'wt', encoding='utf-8', newline='') as fa:
+        wa = csv.writer(fa)
+        wa.writerow(['kod', 'lat', 'lon', 'adresa'])
         for jm in z.namelist():
             for line in io.TextIOWrapper(z.open(jm), encoding='cp1250', errors='replace'):
                 k = line.split(';', 1)[0]
-                if not k.isdigit() or int(k) not in kody:
+                if not k.isdigit():
                     continue
                 col = line.rstrip('\r\n').split(';')
                 if len(col) < 18:
@@ -186,9 +206,17 @@ def registr(cil):
                 if y < 1000 or x < 1000:
                     continue
                 lon, lat = tr.transform(-y, -x)
-                body[int(k)] = (round(lat, 6), round(lon, 6), ' '.join(filter(None, [col[10] or col[8] or col[2], col[2]])))
+                la, lo = round(lat, 6), round(lon, 6)
+                wa.writerow([k, la, lo, adresa_text(col)])
+                vsech += 1
+                if int(k) in kody:
+                    body[int(k)] = (la, lo, ' '.join(filter(None, [col[10] or col[8] or col[2], col[2]])))
     os.remove('adr.zip')
-    log('adresních bodů', len(body))
+    if vsech > 1000000:
+        os.replace(f'{cil}/adresy.tmp.csv.gz', f'{cil}/adresy.csv.gz')
+    else:
+        os.remove(f'{cil}/adresy.tmp.csv.gz')
+    log('adresních bodů s provozovnou', len(body), 'všech adres', vsech)
 
     for jm, rows in (('provozovny', akt), ('ukoncene', ukon)):
         n = 0

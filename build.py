@@ -13,7 +13,10 @@ V ZIPu je pro každou dlaždici a druh prodejny jeden soubor „X_Y/klic=hodnota
         v tomto místě ukončila provozovnu a jinou tu nemá (prodejna nejspíš zavřela),
         „z“ = kdo prodejnu vede jako zavřenou: „o“ Overture (trvale zavřeno), „f“ Foursquare (a žádný jejich otevřený záznam ji nepotvrzuje),
         „f“ = datum, kdy Foursquare prodejnu naposledy něčím ověřil (jejich otevřený záznam se stejným jménem do 120 m),
-        „u“ = poslední úprava nebo kontrola v OpenStreetMap, jen když je starší než 3 roky.
+        „u“ = poslední úprava nebo kontrola v OpenStreetMap, jen když je starší než 3 roky,
+        „ak“ = kód nejbližšího adresního místa RÚIAN (do 40 m), „at“ = jeho adresa (jen když prodejna vlastní adresu nemá),
+        „m“ = id prodejny, kam se tahle nejspíš přestěhovala (stejný druh a podobné jméno do 500 m, tahle nic nepotvrzuje),
+        „ok“ = kategorie Overture, když nesedí s druhem prodejny z mapy, „fk“ = kategorie Foursquare.
 Prodejna z OpenStreetMap bez „o“ Overture nezná (když balík Overture obsahuje – meta.json „overture“), bez „f“ ji nezná
 Foursquare (meta.json „foursquare“). Zavřená místa (OSM: datum ukončení v minulosti, otevírací doba „closed“/„off“,
 disused/abandoned) se do balíku neberou.
@@ -56,7 +59,12 @@ M_SHODA_MISTO = 25              # … nebo stejný druh do 25 m
 M_KONEC = 40                    # ukončená provozovna firmy se jménem prodejny do 40 m
 M_FIRMA_JINDE = 100             # … a stejná firma tu nemá jinou aktivní provozovnu do 100 m
 OSM_STARY_DNI = 3 * 365         # „u“ (poslední úprava v OSM) se do balíku píše jen u starších záznamů – kvůli velikosti
-FSQ_VLAJKA_DNI = 2 * 365        # hlášení „zavřeno“ od uživatelů Foursquare (neověřené) platí, jen když místo dlouho nikdo neověřil
+M_PROV_DUM = 15                 # „v domě je provozovna“: aktivní provozovna z rejstříku do 15 m
+FSQ_VLAJKA_DNI = 2 * 365
+M_ADRESA = 40                   # přichycení k adresnímu místu RÚIAN: nejbližší do 40 m
+M_PRESUN = 500                  # přestěhovaná prodejna: nástupce stejného druhu s podobným jménem do 500 m
+FSQ_ZIVE_DNI = 2 * 365          # Foursquare ji ověřil nejvýš před 2 roky = potvrzuje ji
+NEVYZNAMNA = set('spol sro the and pro pod nad u na v ve s se a i z'.split())        # hlášení „zavřeno“ od uživatelů Foursquare (neověřené) platí, jen když místo dlouho nikdo neověřil
 DNES = datetime.date.today()
 DATUM = re.compile(r'^\d{4}-\d{2}-\d{2}')
 
@@ -91,6 +99,36 @@ def jmeno_sedi(a, b, adresa=''):
 
 def vzdal(la1, lo1, la2, lo2):
     return math.hypot((lo1 - lo2) * 111320 * math.cos(math.radians(la1)), (la1 - la2) * 111320)
+
+
+# běžná křestní jména (malými písmeny bez diakritiky) – podle nich se pozná název, který je jen jménem člověka
+JMENA = set('''jan petr josef pavel jiri martin tomas jaroslav miroslav zdenek vaclav michal frantisek karel milan lukas jakub
+david ladislav ondrej stanislav roman antonin radek marek daniel vladimir filip adam ales matej vojtech dominik robert patrik
+libor ivan vlastimil oldrich jaromir rostislav bohumil zbynek igor vit radim dusan jindrich lubomir pavol peter jozef stefan
+viktor kamil radovan richard hynek bretislav eduard emil erik ervin hugo jonas kristian leos lubos lumir oskar otakar otto
+rene rudolf samuel sebastian simon svatopluk teodor tobias vaclav viliam vilem vladislav zdenek zikmund alois arnost bohdan
+bohuslav bronislav ctirad dalibor denis drahomir evzen gustav herbert ilja jaromir jarmil jeronym kvetoslav lubor mojmir
+norbert premysl slavomir vitezslav zbysek zdenko alexandr alexander andrej boris dmitrij oleg sergej vasil volodymyr mykola
+taras andrii yurii oleksandr serhii
+marie jana eva hana anna lenka katerina lucie vera alena petra jaroslava ludmila helena veronika jitka martina tereza michaela
+zdenka ivana monika marketa barbora zuzana jarmila kristyna jirina dagmar irena vlasta marcela libuse dana kamila simona
+eliska denisa pavla miroslava andrea nikola iveta olga natalie karolina klara gabriela radka renata blanka bozena milena
+adela sarka alzbeta vladimira jindriska emilie stanislava vendula hedvika magdalena silvie zaneta dita daniela romana
+ilona irena jolana kveta lada lydie marta milada nadezda pavlina radmila regina rut sabina sona svetlana tamara vanda
+viera yvona zita agata alice amalie anezka barbara beata bohdana bohumila danuse diana dominika drahomira edita elena ema
+erika eliska hedvika ingrid iva ivona jaroslava johana julie justyna karla kvetoslava lea leona libuse liliana linda lubica
+magda margita marina marika marketa nela nina oksana olena patricie paulina rebeka sandra sona stela tatiana tetiana vladimira
+'''.split())
+TITULY = re.compile(r'\b(?:ing|mgr|bc|mudr|mvdr|judr|phdr|rndr|paeddr|doc|prof|dis|phd|csc|mba|arch)\b\.?', re.I)
+
+
+def jmeno_osoby(nazev):
+    """Je název jen jménem člověka („Robert Dominik“, „Ing. Jana Nováková“)? Pak to bývá sídlo živnostníka, ne prodejna."""
+    t = TITULY.sub(' ', norm(nazev))
+    w = [x for x in re.split(r'[\s,]+', t) if x]
+    if not 2 <= len(w) <= 3 or any(not x.isalpha() for x in w) or any(x in OBECNA for x in w):
+        return False
+    return w[0] in JMENA or w[-1] in JMENA
 
 
 def ukonceno(tags):
@@ -267,10 +305,27 @@ def adresa_ovt(adresa, obec):
     return z
 
 
-def pridej_overture(h, slozka, mapovani):
+def nacti_provozovny(slozka):
+    """Aktivní provozovny z rejstříku jako mřížka (pro „je v domě nějaká provozovna“), nebo None, když zdroj chybí."""
+    cesta = os.path.join(slozka, 'provozovny.csv.gz')
+    if not os.path.isfile(cesta):
+        return None
+    m = Mrizka()
+    with gzip.open(cesta, 'rt', encoding='utf-8') as f:
+        for r in csv.DictReader(f):
+            try:
+                m.pridej(float(r['lat']), float(r['lon']), 1)
+            except (ValueError, KeyError):
+                continue
+    return m
+
+
+def pridej_overture(h, slozka, mapovani, prov=None):
     """Overture místa: potvrdí prodejnu z OSM (zdroje „o“), nebo přibude jako nová „ovt/…“.
     Trvale zavřené místo Overture se stejným jménem do 120 m označí prodejnu z OSM jako zavřenou (zdroje „z“ += „o“),
-    pokud ji zároveň nepotvrzuje otevřený záznam Overture. Vrací (potvrzeno, nových, zavřených)."""
+    pokud ji zároveň nepotvrzuje otevřený záznam Overture. Nové místo jen z Overture, jehož název je jen jméno člověka
+    a v domě (do 15 m) není žádná provozovna z rejstříku, se nebere – bývá to sídlo živnostníka v bytě, ne prodejna.
+    Vrací (potvrzeno, nových, zavřených, vynechaných jmen osob)."""
     osm = Mrizka()
     vse = {}
     for (tx, ty, d), prvky in h.kose.items():
@@ -283,7 +338,7 @@ def pridej_overture(h, slozka, mapovani):
         for z in prvky.values():
             druhy_zaznamu[z[0]].add(d)
     nove = Mrizka()
-    potvrzeno, novych = 0, 0
+    potvrzeno, novych, osob = 0, 0, 0
     zavrena = []
     with gzip.open(os.path.join(slozka, 'overture.csv.gz'), 'rt', encoding='utf-8') as f:
         for r in csv.DictReader(f):
@@ -297,6 +352,12 @@ def pridej_overture(h, slozka, mapovani):
             n = norm(nazev)
             druhy = [d for d, ano, ne in pravidla if (ano is None or ano.search(n)) and (ne is None or not ne.search(n))]
             if not druhy:
+                druhy_kat = [d for d, ano, ne in pravidla]          # pro porovnání sortimentu u prodejny z mapy
+                if not druhy_kat:
+                    continue
+                for d0, z in osm.okolo(la, lo, M_SHODA_MISTO):
+                    if nazev and jmeno_sedi(nazev, z[3].get('name') or z[3].get('brand') or '', r['adresa'] or '') and not (set(druhy_kat) & druhy_zaznamu[z[0]]):
+                        z[4].setdefault('ok', (r['kat'] or '')[:60])
                 continue
             try:
                 la, lo, conf = float(r['lat']), float(r['lon']), float(r['conf'] or 0)
@@ -313,9 +374,17 @@ def pridej_overture(h, slozka, mapovani):
                 z = nejlepsi[1]
                 if conf > z[4].get('o', -1):
                     z[4]['o'] = round(conf, 2)
+                    # sortiment: Overture vede místo jako jiný druh, než má prodejna na mapě
+                    if r['kat'] and not (set(druhy) & druhy_zaznamu[z[0]]):
+                        z[4]['ok'] = r['kat'][:60]
+                    else:
+                        z[4].pop('ok', None)
                 potvrzeno += 1
                 continue
             if conf < OVT_JISTOTA_NOVA or not nazev:
+                continue
+            if prov is not None and jmeno_osoby(nazev) and not any(True for _ in prov.okolo(la, lo, M_PROV_DUM)):
+                osob += 1
                 continue
             # stejné místo v Overture dvakrát: ponechá se to s vyšší jistotou
             dvojce = next((z for d, z in nove.okolo(la, lo, 30) if jmeno_sedi(nazev, z[3]['name'])), None)
@@ -356,7 +425,7 @@ def pridej_overture(h, slozka, mapovani):
             if 'o' not in z[4].get('z', ''):
                 z[4]['z'] = z[4].get('z', '') + 'o'
             zavrenych.add(z[0])
-    return potvrzeno, novych, len(zavrenych)
+    return potvrzeno, novych, len(zavrenych), osob
 
 
 def pridej_foursquare(h, slozka):
@@ -395,6 +464,9 @@ def pridej_foursquare(h, slozka):
                 zavrene.add(zid)
             else:
                 otevrene[zid] = max(otevrene.get(zid, ''), obnoveno)
+                kat = (r.get('kat') or '').split('>')[-1].strip()
+                if kat:
+                    vse[zid][4]['fk'] = kat[:60]
     for zid, ob in otevrene.items():
         if ob:
             vse[zid][4]['f'] = ob
@@ -446,6 +518,101 @@ def oznac_ukoncene(h, slozka):
     return oznaceno
 
 
+def slova_vse(s):
+    """Všechna slova názvu (i obecná jako „kola“, „sport“) – pro podobnost u stěhování v rámci stejného druhu."""
+    return {w for w in re.split(r'[^a-z0-9]+', norm(s)) if len(w) >= 3 and w not in NEVYZNAMNA}
+
+
+def oznac_presunute(h, prov=None, prov_firmy=None):
+    """Prodejna, kterou nic nepotvrzuje (Overture ji nezná, Foursquare ji 2 roky neověřil, nemá kontakty ani otevírací dobu,
+    nemá adresu a firma se jejím jménem v okolí provozovnu nemá), a do 500 m je potvrzená prodejna stejného druhu
+    s podobným jménem → zdroje „m“ = id nástupce (nejspíš se přestěhovala). Vrací počet."""
+    hranice = (DNES - datetime.timedelta(days=FSQ_ZIVE_DNI)).isoformat()
+    druhy = collections.defaultdict(set)
+    vse = {}
+    for (tx, ty, d), prvky in h.kose.items():
+        for z in prvky.values():
+            druhy[z[0]].add(d)
+            vse[z[0]] = z
+    def jmeno(z):
+        return z[3].get('name') or z[3].get('brand') or ''
+    def firma_tu(z):
+        return prov_firmy is not None and any(jmeno_sedi(jmeno(z), fi) for d, fi in prov_firmy.okolo(z[1], z[2], 100))
+    def silna(z):
+        t, x = z[3], z[4]
+        return (x.get('o', 0) >= OVT_JISTOTA_NOVA or x.get('f', '') >= hranice or bool(t.get('opening_hours') or t.get('website')
+                or t.get('contact:website') or t.get('phone') or t.get('contact:phone')) or firma_tu(z)) and not x.get('z')
+    def slaba(z):
+        t, x = z[3], z[4]
+        if z[0].startswith('ovt/') or x.get('o') or x.get('f', '') >= hranice or x.get('k'):
+            return False
+        if t.get('opening_hours') or t.get('website') or t.get('contact:website') or t.get('phone') or t.get('contact:phone'):
+            return False
+        if t.get('addr:street') or t.get('addr:place') or t.get('addr:housenumber'):
+            return False
+        return not firma_tu(z)
+    mr = Mrizka()
+    for z in vse.values():
+        mr.pridej(z[1], z[2], z)
+    n = 0
+    for z in vse.values():
+        if not slaba(z) or not jmeno(z):
+            continue
+        sl = slova_vse(jmeno(z))
+        nejlepsi = None
+        for d, y in mr.okolo(z[1], z[2], M_PRESUN):
+            if y is z or not (druhy[y[0]] & druhy[z[0]]) or not silna(y):
+                continue
+            spolu = sl & slova_vse(jmeno(y))
+            # podobné jméno: rozlišující slovo, nebo aspoň dvě obecná („kola“ + „sport“) – jedno obecné („Potraviny“) nestačí
+            if ((spolu - OBECNA) or len(spolu) >= 2 or jmeno_sedi(jmeno(z), jmeno(y))) and (nejlepsi is None or d < nejlepsi[0]):
+                nejlepsi = (d, y)
+        if nejlepsi and nejlepsi[0] > M_SHODA_MISTO:            # v tomtéž místě to není stěhování, ale dvojí záznam
+            z[4]['m'] = nejlepsi[1][0]
+            n += 1
+    return n
+
+
+def prichyt_adresy(h, slozka):
+    """Každá prodejna dostane kód nejbližšího adresního místa RÚIAN do 40 m („ak“) a prodejna bez vlastní adresy i adresu („at“).
+    Dvě čtení souboru: nejdřív jen poloha a kód (šetří paměť), pak texty jen pro potřebné adresy. Vrací (přichyceno, doplněno adres)."""
+    mr = Mrizka()
+    with gzip.open(os.path.join(slozka, 'adresy.csv.gz'), 'rt', encoding='utf-8') as f:
+        for r in csv.DictReader(f):
+            try:
+                mr.pridej(float(r['lat']), float(r['lon']), int(r['kod']))
+            except (ValueError, KeyError):
+                continue
+    vse = {}
+    for prvky in h.kose.values():
+        for z in prvky.values():
+            vse[z[0]] = z
+    potreba = {}
+    n = 0
+    for z in vse.values():
+        nejlepsi = min(mr.okolo(z[1], z[2], M_ADRESA), default=None, key=lambda x: x[0])
+        if nejlepsi is None:
+            continue
+        z[4]['ak'] = nejlepsi[1]
+        n += 1
+        t = z[3]
+        if not (t.get('addr:street') or t.get('addr:place') or t.get('addr:housenumber')):
+            potreba.setdefault(nejlepsi[1], []).append(z)
+    del mr
+    doplneno = 0
+    if potreba:
+        with gzip.open(os.path.join(slozka, 'adresy.csv.gz'), 'rt', encoding='utf-8') as f:
+            for r in csv.DictReader(f):
+                try:
+                    k = int(r['kod'])
+                except (ValueError, KeyError):
+                    continue
+                for z in potreba.get(k, ()):
+                    z[4]['at'] = r['adresa'][:200]
+                    doplneno += 1
+    return n, doplneno
+
+
 def balik(pbf, typy, vystup, zdroje=None):
     cele, pary = nacti_typy(typy)
     h = Sber(cele, pary)
@@ -460,13 +627,14 @@ def balik(pbf, typy, vystup, zdroje=None):
     druhy_balik = cele | {f'{k}={v}' for k in pary for v in pary[k]}
     if zdroje and os.path.isfile(os.path.join(zdroje, 'overture.csv.gz')):
         mapovani = nacti_mapovani(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'overture.txt'), druhy_balik)
-        potvrzeno, novych, zavrenych = pridej_overture(h, zdroje, mapovani)
+        potvrzeno, novych, zavrenych, osob = pridej_overture(h, zdroje, mapovani, nacti_provozovny(zdroje))
         rel = open(os.path.join(zdroje, 'overture.txt')).read().strip() if os.path.isfile(os.path.join(zdroje, 'overture.txt')) else ''
         meta_navic['overture'] = rel or 'ano'
         meta_navic['overture_potvrzeno'] = potvrzeno
         meta_navic['overture_novych'] = novych
         meta_navic['overture_zavrenych'] = zavrenych
-        print(f'Overture: potvrzeno {potvrzeno} prodejen z mapy, nových {novych}, zavřených {zavrenych}')
+        meta_navic['overture_jen_jmeno'] = osob
+        print(f'Overture: potvrzeno {potvrzeno} prodejen z mapy, nových {novych}, zavřených {zavrenych}, vynecháno jmen osob bez provozovny {osob}')
     if zdroje and os.path.isfile(os.path.join(zdroje, 'foursquare.csv.gz')):
         potvrzeno, zavrenych = pridej_foursquare(h, zdroje)
         rel = open(os.path.join(zdroje, 'foursquare.txt')).read().strip() if os.path.isfile(os.path.join(zdroje, 'foursquare.txt')) else ''
@@ -477,6 +645,24 @@ def balik(pbf, typy, vystup, zdroje=None):
     if zdroje and all(os.path.isfile(os.path.join(zdroje, f)) for f in ('provozovny.csv.gz', 'ukoncene.csv.gz')):
         meta_navic['ukoncene'] = oznac_ukoncene(h, zdroje)
         print(f"prodejen s ukončenou provozovnou: {meta_navic['ukoncene']}")
+    # přestěhované prodejny (firmy s provozovnou v okolí podle jména – ať se nepřestěhuje prodejna, kterou rejstřík potvrzuje)
+    prov_firmy = None
+    if zdroje and os.path.isfile(os.path.join(zdroje, 'provozovny.csv.gz')):
+        prov_firmy = Mrizka()
+        with gzip.open(os.path.join(zdroje, 'provozovny.csv.gz'), 'rt', encoding='utf-8') as f:
+            for r in csv.DictReader(f):
+                if r.get('firma'):
+                    try:
+                        prov_firmy.pridej(float(r['lat']), float(r['lon']), r['firma'])
+                    except ValueError:
+                        pass
+    meta_navic['presunutych'] = oznac_presunute(h, None, prov_firmy)
+    print(f"nejspíš přestěhovaných: {meta_navic['presunutych']}")
+    if zdroje and os.path.isfile(os.path.join(zdroje, 'adresy.csv.gz')):
+        prichyceno, doplneno = prichyt_adresy(h, zdroje)
+        meta_navic['adresy'] = prichyceno
+        meta_navic['adresy_doplneno'] = doplneno
+        print(f'přichyceno k adrese RÚIAN: {prichyceno}, doplněno adres: {doplneno}')
 
     os.makedirs(vystup, exist_ok=True)
     meta_navic['osm_ukoncenych'] = h.ukoncenych
