@@ -17,6 +17,10 @@ Jednou měsíčně připraví balík prodejen v Česku pro Akviziční mapu.
     podmínky (účel Commercial), v Hugging Face → Settings → Access Tokens vytvořit klíč typu Read a vložit ho sem jako
     **Settings → Secrets and variables → Actions → New repository secret**, název `HF_TOKEN`. Bez klíče se Foursquare vynechá.
   - **Registr osob + RÚIAN + RES** – prodejna, jejíž firma tu ukončila provozovnu a jinou tu nemá, se označí jako nejspíš zavřená.
+  - **Adresy RÚIAN**: každá prodejna dostane kód nejbližšího adresního místa (do 40 m) a prodejna bez adresy i adresu.
+  - **Přestěhované prodejny**: prodejna, kterou nic nepotvrzuje, a do 500 m je potvrzená prodejna stejného druhu
+    s podobným jménem → označí se odkazem na nástupce.
+  - **Sortiment**: když Overture vede místo jako jiný druh než mapa, jde do balíku jeho kategorie (a kategorie Foursquare).
   - Z OpenStreetMap se neberou místa označená jako zavřená (datum ukončení v minulosti, otevírací doba „closed“, disused/abandoned);
     u záznamů, které nikdo 3 a více let neupravil ani nezkontroloval, jde do balíku datum poslední úpravy.
   - Když některý doplňkový zdroj selže, balík se postaví bez něj.
