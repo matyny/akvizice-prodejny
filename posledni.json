@@ -1,7 +1,7 @@
 {
- "verze": "2026-11-01T21:21:36Z",
- "vytvoreno": "2026-11-02T12:33:22Z",
- "pocet": 155575,
+ "verze": "2026-11-26T21:21:01Z",
+ "vytvoreno": "2026-11-27T13:48:51Z",
+ "pocet": 156135,
  "typy": [
   "shop",
   "amenity=bar",
@@ -22,17 +22,17 @@
   "tourism=hotel"
  ],
  "soubor": "prodejny.zip",
- "velikost": 12418456,
- "sha256": "56e5a4706c0641dfc53e5b4c11d55a8dfb12cb8739c0d55c6422a7b9f6a21379",
+ "velikost": 12401010,
+ "sha256": "4088f42203551214b9886529c5bd47cd6b6902ff92fb45d6caeb10a03e92dad6",
  "licence": "© přispěvatelé OpenStreetMap, ODbL 1.0 · Overture Maps Foundation, CDLA Permissive 2.0 / Apache 2.0 · Registr osob (DIA), RÚIAN (ČÚZK), RES (ČSÚ)",
- "overture": "2026-10-21.0",
- "overture_potvrzeno": 46355,
- "overture_novych": 63931,
- "overture_zavrenych": 3,
- "overture_jen_jmeno": 1043,
- "ukoncene": 2046,
- "presunutych": 718,
- "adresy": 139120,
- "adresy_doplneno": 59707,
- "osm_ukoncenych": 102
+ "overture": "2026-11-18.0",
+ "overture_potvrzeno": 46458,
+ "overture_novych": 64153,
+ "overture_zavrenych": 1,
+ "overture_jen_jmeno": 1050,
+ "ukoncene": 0,
+ "presunutych": 923,
+ "adresy": 139467,
+ "adresy_doplneno": 59869,
+ "osm_ukoncenych": 103
 }
