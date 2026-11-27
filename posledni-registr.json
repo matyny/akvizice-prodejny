@@ -1,0 +1,79 @@
+{
+ "verze": "2026-11-27T14:53:08Z",
+ "vytvoreno": "2026-11-27T14:54:59Z",
+ "soubor": "registr-20261127T145308Z.bin",
+ "velikost_bin": 81345158,
+ "kus": 16777216,
+ "kusy": [
+  [
+   0,
+   6496203
+  ],
+  [
+   6496203,
+   6688586
+  ],
+  [
+   13184789,
+   6561970
+  ],
+  [
+   19746759,
+   6608780
+  ],
+  [
+   26355539,
+   6653957
+  ],
+  [
+   33009496,
+   6229366
+  ],
+  [
+   39238862,
+   5589256
+  ],
+  [
+   44828118,
+   5395262
+  ],
+  [
+   50223380,
+   6106844
+  ],
+  [
+   56330224,
+   6633029
+  ],
+  [
+   62963253,
+   7198466
+  ],
+  [
+   70161719,
+   8432900
+  ],
+  [
+   78594619,
+   2750539
+  ]
+ ],
+ "sifra": "aes-256-gcm",
+ "format": 1,
+ "davka": 1795791188,
+ "prov_ulozeno": 575251,
+ "adr_ulozeno": 267810,
+ "adr_soubor": "20261031_OB_ADR_csv.zip",
+ "coi_ulozeno": 18455,
+ "coi_radku": 62102,
+ "coi_chyba": "",
+ "radku": 3530079,
+ "jine": 250214,
+ "ulozeno": 959193,
+ "zanikle": 570086,
+ "bez_prov": 1750586,
+ "vznik_od": "2025-10-23",
+ "velikost": 205877248,
+ "sha256": "b22661c4d9325d9b6b87b879b8f1a069401ed388e64c19af3d76613e028c76f5",
+ "licence": "RES (ČSÚ), Registr osob (Digitální a informační agentura), RÚIAN (ČÚZK, CC BY 4.0), kontroly ČOI (Česká obchodní inspekce) – otevřená data"
+}
