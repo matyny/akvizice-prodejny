@@ -8,7 +8,7 @@ Akviziční mapa – další zdroje k měsíčnímu balíku prodejen (běží na
   python3 zdroje.py registr CIL      provozovny z Registru osob s polohou z RÚIAN a názvem firmy z RES ČSÚ
                                      → CIL/provozovny.csv.gz (aktivní) a CIL/ukoncene.csv.gz (ukončené za poslední 3 roky)
                                      a všechna adresní místa RÚIAN → CIL/adresy.csv.gz (kód, poloha, adresa) pro přichycení
-                                     prodejen k adresám
+                                     prodejen k adresám; stažené soubory nechá ve složce stazene/ pro registr.py
 
 Když se zdroj nepodaří stáhnout, skript skončí chybou a balík se postaví jen z OpenStreetMap (jako dřív).
 Data: Overture Maps Foundation (CDLA Permissive 2.0 / Apache 2.0), Foursquare OS Places (Apache 2.0), Digitální a informační agentura (Registr osob),
@@ -26,21 +26,29 @@ def log(*a):
 
 
 def stahni(url, cil):
+    # nejdřív do dočasného souboru – nedokončené stažení nesmí zůstat pod platným názvem (registr.py by ho vzal)
     for pokus in range(4):
         try:
             req = urllib.request.Request(url, headers={'User-Agent': UA})
-            with urllib.request.urlopen(req, timeout=900) as r, open(cil, 'wb') as f:
+            with urllib.request.urlopen(req, timeout=900) as r, open(cil + '.tmp', 'wb') as f:
                 while True:
                     b = r.read(1 << 20)
                     if not b:
                         break
                     f.write(b)
+            os.replace(cil + '.tmp', cil)
             log('staženo', url, os.path.getsize(cil) // 1048576, 'MB')
             return
         except Exception as e:                      # síť nebo server – zkusí se znovu
             log('chyba stahování', url, e)
             time.sleep(30)
+    if os.path.exists(cil + '.tmp'):
+        os.remove(cil + '.tmp')
     raise SystemExit('nepodařilo se stáhnout ' + url)
+
+
+# stažené soubory registrů zůstávají tady – registr.py z nich hned potom staví registr firem pro aplikaci
+STAZENE = 'stazene'
 
 
 def overture(cil):
@@ -137,9 +145,11 @@ def registr(cil):
     dnes = datetime.date.today().isoformat()
     od_ukoncenych = (datetime.date.today() - datetime.timedelta(days=3 * 365)).isoformat()
 
-    stahni('https://opendata.csu.gov.cz/soubory/od/od_org03/res_data.csv', 'res.csv')
+    os.makedirs(STAZENE, exist_ok=True)
+    res = os.path.join(STAZENE, 'res.csv')
+    stahni('https://opendata.csu.gov.cz/soubory/od/od_org03/res_data.csv', res)
     firmy = {}
-    with open('res.csv', encoding='utf-8-sig', errors='replace', newline='') as f:
+    with open(res, encoding='utf-8-sig', errors='replace', newline='') as f:
         rd = csv.reader(f)
         c = {k.strip().upper(): i for i, k in enumerate(next(rd))}
         for r in rd:
@@ -147,12 +157,12 @@ def registr(cil):
                 firmy[r[c['ICO']].strip().zfill(8)] = (r[c['FIRMA']].strip(), r[c['DDATZAN']].strip())
             except (IndexError, KeyError):
                 pass
-    os.remove('res.csv')
     log('firem', len(firmy))
 
-    stahni('https://www.szrcr.cz/images/dokumenty/ROS/Otevrena%20data/ros02_data.csv', 'ros.csv')
+    ros = os.path.join(STAZENE, 'ros.csv')
+    stahni('https://www.szrcr.cz/images/dokumenty/ROS/Otevrena%20data/ros02_data.csv', ros)
     akt, ukon = [], []
-    with open('ros.csv', encoding='utf-8-sig', errors='replace', newline='') as f:
+    with open(ros, encoding='utf-8-sig', errors='replace', newline='') as f:
         rd = csv.reader(f)
         c = {k.strip().upper(): i for i, k in enumerate(next(rd))}
         for nutny in ('ICP', 'ICO', 'PKODADM', 'DATUKON'):
@@ -172,14 +182,14 @@ def registr(cil):
                     ukon.append((ico, kod, konec))
             else:
                 akt.append((ico, kod))
-    os.remove('ros.csv')
     log('provozoven aktivních', len(akt), 'ukončených', len(ukon))
 
     kody = {x[1] for x in akt} | {x[1] for x in ukon}
     d = datetime.date.today().replace(day=1) - datetime.timedelta(days=1)
     for _ in range(3):
+        adr = os.path.join(STAZENE, f'{d:%Y%m%d}_OB_ADR_csv.zip')
         try:
-            stahni(f'https://vdp.cuzk.gov.cz/vymenny_format/csv/{d:%Y%m%d}_OB_ADR_csv.zip', 'adr.zip')
+            stahni(f'https://vdp.cuzk.gov.cz/vymenny_format/csv/{d:%Y%m%d}_OB_ADR_csv.zip', adr)
             break
         except SystemExit:
             d = d.replace(day=1) - datetime.timedelta(days=1)
@@ -188,7 +198,7 @@ def registr(cil):
     body = {}
     vsech = 0
     # všechna adresní místa jdou i do adresy.csv.gz (přichycení prodejen k adrese); do dočasného souboru, ať nedokončený nezůstane
-    with zipfile.ZipFile('adr.zip') as z, gzip.open(f'{cil}/adresy.tmp.csv.gz', 'wt', encoding='utf-8', newline='') as fa:
+    with zipfile.ZipFile(adr) as z, gzip.open(f'{cil}/adresy.tmp.csv.gz', 'wt', encoding='utf-8', newline='') as fa:
         wa = csv.writer(fa)
         wa.writerow(['kod', 'lat', 'lon', 'adresa'])
         for jm in z.namelist():
@@ -211,7 +221,6 @@ def registr(cil):
                 vsech += 1
                 if int(k) in kody:
                     body[int(k)] = (la, lo, ' '.join(filter(None, [col[10] or col[8] or col[2], col[2]])))
-    os.remove('adr.zip')
     if vsech > 1000000:
         os.replace(f'{cil}/adresy.tmp.csv.gz', f'{cil}/adresy.csv.gz')
     else:

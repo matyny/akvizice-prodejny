@@ -30,7 +30,7 @@ jobs:
         run: |
           sudo apt-get update -q
           sudo apt-get install -y -q osmium-tool
-          pip install osmium duckdb pyproj
+          pip install osmium duckdb pyproj cryptography
 
       - name: Stáhnout mapu Česka
         run: curl -fsSL --retry 3 -A "akvizice-prodejny (github.com/${{ github.repository }})" -o cz.osm.pbf https://download.geofabrik.de/europe/czech-republic-latest.osm.pbf
@@ -60,6 +60,16 @@ jobs:
           mkdir -p zdroje
           python3 build.py balik prodejny.osm.pbf typy.txt out zdroje
 
+      # Hotový registr firem pro aplikaci (dřív si ho každá aplikace stavěla sama na hostingu). Bere soubory stažené
+      # v kroku „Registr provozoven“ (složka stazene/), co chybí, stáhne. Zašifruje se klíčem BALIK_KLIC – bez tajemství
+      # se krok přeskočí a aplikace si registr staví sama jako dřív. Když selže, prodejny se zveřejní i tak.
+      - name: Registr firem
+        continue-on-error: true
+        timeout-minutes: 60
+        env:
+          BALIK_KLIC: ${{ secrets.BALIK_KLIC }}
+        run: python3 registr.py postav stazene out-registr
+
       - name: Zveřejnit
         if: ${{ !inputs.test }}
         env:
@@ -69,15 +79,24 @@ jobs:
           gh release upload data out/prodejny.zip --clobber
           gh release upload data out/meta.json --clobber
           if [ -f out/NOTICE-foursquare.txt ]; then gh release upload data out/NOTICE-foursquare.txt --clobber; fi
+          # registr: nejdřív data, popis (registr.json) až po nich – aplikace tak nikdy nevidí popis bez dat;
+          # na GitHubu zůstávají dvě poslední verze dat (aplikace, která zrovna stahuje starší, ji dostáhne)
+          if [ -f out-registr/registr.json ] && ls out-registr/registr-*.bin >/dev/null 2>&1; then
+            gh release upload data out-registr/registr-*.bin --clobber
+            gh release upload data out-registr/registr.json --clobber
+            gh release view data --json assets -q '.assets[].name' | grep '^registr-.*\.bin$' | sort -r | tail -n +3 | xargs -r -I{} gh release delete-asset data {} -y
+          fi
 
       # zápis do repozitáře: GitHub jinak po 60 dnech bez změn naplánované spouštění vypne
       - name: Zapsat poslední běh
         if: ${{ !inputs.test }}
         run: |
           cp out/meta.json posledni.json
+          if [ -f out-registr/registr.json ]; then cp out-registr/registr.json posledni-registr.json; fi
           git config user.name "github-actions"
           git config user.email "github-actions@users.noreply.github.com"
           git add posledni.json
+          if [ -f posledni-registr.json ]; then git add posledni-registr.json; fi
           git commit -m "Prodejny $(date -u +%Y-%m-%d)" || echo "beze změny"
           git push
 
@@ -90,3 +109,13 @@ jobs:
           git add zkouska
           git commit -m "Zkouška balíku $(date -u +%Y-%m-%d)" || echo "beze změny"
           git push
+
+      # zkouška: registr se nezveřejní, jen se na 3 dny uloží k běhu (Actions → běh → Artifacts) – do repozitáře by byl moc velký
+      - name: Zkouška – registr k běhu
+        if: ${{ inputs.test }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: registr-zkouska
+          path: out-registr/registr*
+          retention-days: 3
+          if-no-files-found: ignore

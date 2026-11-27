@@ -26,6 +26,23 @@ Jednou měsíčně připraví balík prodejen v Česku pro Akviziční mapu.
   - Když některý doplňkový zdroj selže, balík se postaví bez něj.
 - Stahování doplňkových zdrojů: `zdroje.py`, stavba balíku: `build.py`.
 
+## Registr firem pro aplikaci
+
+Stejný běh postaví i hotový **registr firem** (RES ČSÚ, provozovny z Registru osob, adresy RÚIAN, kontroly ČOI) – stejné tabulky
+a pravidla jako aplikace (`lib/res.php`, `lib/provozovny.php`). Aplikace si ho jen stáhne místo stavby na hostingu: `registr.py`.
+
+- Výsledek: **Releases → Prodejny z mapy** – `registr.json` (popis, počty) a `registr-VERZE.bin` (data). Zůstávají dvě poslední verze dat.
+- Data jsou **zašifrovaná** (AES-256-GCM): jsou v nich i jména živnostníků a repozitář je veřejný. Přečte je jen aplikace se stejným klíčem.
+- Klíč (jednou): 32 náhodných bajtů v base64, např. v Git Bash `openssl rand -base64 32`, nebo v PowerShell 7
+  `[Convert]::ToBase64String([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))`.
+  Vložit sem jako **Settings → Secrets and variables → Actions → New repository secret**, název `BALIK_KLIC`,
+  a stejný klíč do `config.php` každé aplikace (`'balik_klic' => '…'`). Klíč nikam jinam neposílat.
+  Bez tajemství se krok přeskočí (aplikace si registr staví sama jako dřív).
+- Volba „Jen zkouška“ registr nezveřejní – uloží ho na 3 dny k běhu (Actions → běh → Artifacts).
+- Když se v aplikaci změní tabulky registru nebo pravidla jeho stavby, musí se stejně změnit `registr.py` a zvýšit `REG_FORMAT`
+  (v aplikaci `AM_REG_FORMAT`) – aplikace jiný formát nepřijme a postaví si registr sama.
+- Stažené soubory registrů nechává `zdroje.py registr` ve složce `stazene/`, `registr.py` z nich staví (co chybí, stáhne sám).
+
 Data © přispěvatelé OpenStreetMap (ODbL 1.0); Overture Maps Foundation (CDLA Permissive 2.0 / Apache 2.0);
 Foursquare OS Places (Apache 2.0, NOTICE se přikládá k vydání jako `NOTICE-foursquare.txt`);
-Registr osob (Digitální a informační agentura), RÚIAN (ČÚZK, CC BY 4.0), RES (ČSÚ) – otevřená data.
+Registr osob (Digitální a informační agentura), RÚIAN (ČÚZK, CC BY 4.0), RES (ČSÚ), kontroly ČOI (Česká obchodní inspekce) – otevřená data.
