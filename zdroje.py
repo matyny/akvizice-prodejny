@@ -25,23 +25,35 @@ def log(*a):
     print(*a, flush=True)
 
 
-def stahni(url, cil):
-    # nejdřív do dočasného souboru – nedokončené stažení nesmí zůstat pod platným názvem (registr.py by ho vzal)
-    for pokus in range(4):
+CEKANI = (30, 60, 120, 240)                     # pauzy mezi pokusy (s)
+
+
+def stahni(url, cil, min_mb=0):
+    """Stáhne soubor. Nejdřív do dočasného souboru – nedokončené stažení nesmí zůstat pod platným názvem
+    (registr.py by ho vzal). Ověří se délka podle hlavičky Content-Length a nejmenší rozumná velikost:
+    server někdy spojení přeruší, nebo místo souboru pošle krátkou chybovou stránku (RES ČSÚ 27. 11. 2026: „0 MB“)."""
+    for pokus in range(len(CEKANI) + 1):
         try:
             req = urllib.request.Request(url, headers={'User-Agent': UA})
             with urllib.request.urlopen(req, timeout=900) as r, open(cil + '.tmp', 'wb') as f:
+                delka = int(r.headers.get('Content-Length') or 0)
                 while True:
                     b = r.read(1 << 20)
                     if not b:
                         break
                     f.write(b)
+            vel = os.path.getsize(cil + '.tmp')
+            if delka and vel != delka:
+                raise IOError(f'nedokončené stažení: {vel} z {delka} B')
+            if vel < min_mb * 1048576:
+                raise IOError(f'podezřele malý soubor: {vel} B (čekám aspoň {min_mb} MB)')
             os.replace(cil + '.tmp', cil)
-            log('staženo', url, os.path.getsize(cil) // 1048576, 'MB')
+            log('staženo', url, vel // 1048576, 'MB')
             return
         except Exception as e:                      # síť nebo server – zkusí se znovu
             log('chyba stahování', url, e)
-            time.sleep(30)
+            if pokus < len(CEKANI):
+                time.sleep(CEKANI[pokus])
     if os.path.exists(cil + '.tmp'):
         os.remove(cil + '.tmp')
     raise SystemExit('nepodařilo se stáhnout ' + url)
@@ -147,20 +159,24 @@ def registr(cil):
 
     os.makedirs(STAZENE, exist_ok=True)
     res = os.path.join(STAZENE, 'res.csv')
-    stahni('https://opendata.csu.gov.cz/soubory/od/od_org03/res_data.csv', res)
     firmy = {}
-    with open(res, encoding='utf-8-sig', errors='replace', newline='') as f:
-        rd = csv.reader(f)
-        c = {k.strip().upper(): i for i, k in enumerate(next(rd))}
-        for r in rd:
-            try:
-                firmy[r[c['ICO']].strip().zfill(8)] = (r[c['FIRMA']].strip(), r[c['DDATZAN']].strip())
-            except (IndexError, KeyError):
-                pass
+    try:
+        stahni('https://opendata.csu.gov.cz/soubory/od/od_org03/res_data.csv', res, min_mb=50)
+        with open(res, encoding='utf-8-sig', errors='replace', newline='') as f:
+            rd = csv.reader(f)
+            c = {k.strip().upper(): i for i, k in enumerate(next(rd))}
+            for r in rd:
+                try:
+                    firmy[r[c['ICO']].strip().zfill(8)] = (r[c['FIRMA']].strip(), r[c['DDATZAN']].strip())
+                except (IndexError, KeyError):
+                    pass
+    except SystemExit as e:
+        # bez RES chybí jen názvy firem (ukončené provozovny se nepoznají); provozovny a adresy se připraví i tak
+        log('registr ČSÚ (RES) se nepodařilo stáhnout – pokračuji bez názvů firem:', e)
     log('firem', len(firmy))
 
     ros = os.path.join(STAZENE, 'ros.csv')
-    stahni('https://www.szrcr.cz/images/dokumenty/ROS/Otevrena%20data/ros02_data.csv', ros)
+    stahni('https://www.szrcr.cz/images/dokumenty/ROS/Otevrena%20data/ros02_data.csv', ros, min_mb=20)
     akt, ukon = [], []
     with open(ros, encoding='utf-8-sig', errors='replace', newline='') as f:
         rd = csv.reader(f)
@@ -189,7 +205,7 @@ def registr(cil):
     for _ in range(3):
         adr = os.path.join(STAZENE, f'{d:%Y%m%d}_OB_ADR_csv.zip')
         try:
-            stahni(f'https://vdp.cuzk.gov.cz/vymenny_format/csv/{d:%Y%m%d}_OB_ADR_csv.zip', adr)
+            stahni(f'https://vdp.cuzk.gov.cz/vymenny_format/csv/{d:%Y%m%d}_OB_ADR_csv.zip', adr, min_mb=20)
             break
         except SystemExit:
             d = d.replace(day=1) - datetime.timedelta(days=1)

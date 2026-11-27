@@ -718,21 +718,36 @@ URL_ADR = 'https://vdp.cuzk.gov.cz/vymenny_format/csv/{:%Y%m%d}_OB_ADR_csv.zip'
 URL_COI = 'https://coi.gov.cz/userdata/files/dokumenty-ke-stazeni/open-data/kontroly.csv'
 
 
+def soubor_ok(cesta, min_mb, sloupce=()):
+    """Je stažený soubor použitelný? Aspoň min_mb MB a v prvním řádku potřebné sloupce (jinak se stáhne znovu)."""
+    if not os.path.isfile(cesta) or os.path.getsize(cesta) < min_mb * 1048576:
+        return False
+    with open(cesta, 'rb') as f:
+        prvni = f.readline(65536).decode('utf-8', 'replace').upper()
+    return all(s in prvni for s in sloupce)
+
+
 def stahni_zdroje(slozka):
     from zdroje import stahni
     os.makedirs(slozka, exist_ok=True)
     res, ros, coi = (os.path.join(slozka, x) for x in ('res.csv', 'ros.csv', 'kontroly.csv'))
-    if not os.path.isfile(res):
-        stahni(URL_RES, res)
-    if not os.path.isfile(ros):
-        stahni(URL_ROS, ros)
-    adr = next((os.path.join(slozka, x) for x in sorted(os.listdir(slozka), reverse=True) if x.endswith('_OB_ADR_csv.zip')), None)
+    # soubor z kroku „Registr provozoven“ se použije jen, když je celý; jinak se stáhne znovu (server mohl mezitím ožít)
+    if not soubor_ok(res, 50, ('ICO', 'FIRMA', 'FORMA', 'OKRESLAU')):
+        log('registr ČSÚ (RES) chybí nebo je neúplný – stahuji znovu')
+        stahni(URL_RES, res, min_mb=50)
+        if not soubor_ok(res, 50, ('ICO', 'FIRMA', 'FORMA', 'OKRESLAU')):
+            raise SystemExit('registr ČSÚ (RES) má jiný tvar, než čekám – registr se nezveřejní')
+    if not soubor_ok(ros, 20, ('ICP', 'ICO', 'PKODADM')):
+        log('provozovny (ROS) chybí nebo jsou neúplné – stahuji znovu')
+        stahni(URL_ROS, ros, min_mb=20)
+    adr = next((os.path.join(slozka, x) for x in sorted(os.listdir(slozka), reverse=True)
+                if x.endswith('_OB_ADR_csv.zip') and os.path.getsize(os.path.join(slozka, x)) >= 20 * 1048576), None)
     if adr is None:
         d = datetime.date.today().replace(day=1) - datetime.timedelta(days=1)
         for _ in range(3):
             try:
                 adr = os.path.join(slozka, f'{d:%Y%m%d}_OB_ADR_csv.zip')
-                stahni(URL_ADR.format(d), adr)
+                stahni(URL_ADR.format(d), adr, min_mb=20)
                 break
             except SystemExit:
                 if adr and os.path.exists(adr):
@@ -741,9 +756,9 @@ def stahni_zdroje(slozka):
                 adr = None
         if adr is None:
             raise SystemExit('adresy RÚIAN se nepodařilo stáhnout')
-    if not os.path.isfile(coi):
+    if not soubor_ok(coi, 5):
         try:
-            stahni(URL_COI, coi)
+            stahni(URL_COI, coi, min_mb=5)
         except SystemExit:
             log('kontroly ČOI se nepodařilo stáhnout – registr se postaví bez nich')
             coi = None
