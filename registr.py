@@ -441,6 +441,105 @@ def adresy(db, cesta):
     return n
 
 
+# Celá adresní místa Česka (RÚIAN): aplikace podle nich hledá polohu adres a adresu u prodejny sama, bez dotazů ven.
+# Polohy v milióntinách stupně (celé číslo), názvy ulic, částí obcí a obcí ve vlastních tabulkách. Aplikace s registrem
+# bez těchto tabulek (postaveným na hostingu) hledá polohy online jako dřív.
+TABULKY_ADRES = [
+    """CREATE TABLE main.am_adr (
+            kod INTEGER PRIMARY KEY,
+            ulice INTEGER NOT NULL,
+            cast_obce INTEGER NOT NULL,
+            cd INTEGER NOT NULL,
+            co TEXT NOT NULL,
+            ev INTEGER NOT NULL,
+            psc INTEGER NOT NULL,
+            lat INTEGER NOT NULL,
+            lon INTEGER NOT NULL
+        )""",
+    "CREATE TABLE main.am_adr_obce (kod INTEGER PRIMARY KEY, nazev TEXT NOT NULL, n TEXT NOT NULL, lat INTEGER NOT NULL, lon INTEGER NOT NULL, pocet INTEGER NOT NULL)",
+    "CREATE TABLE main.am_adr_casti (kod INTEGER PRIMARY KEY, obec INTEGER NOT NULL, nazev TEXT NOT NULL, n TEXT NOT NULL, lat INTEGER NOT NULL, lon INTEGER NOT NULL)",
+    "CREATE TABLE main.am_adr_ulice (kod INTEGER PRIMARY KEY, obec INTEGER NOT NULL, nazev TEXT NOT NULL, n TEXT NOT NULL, k TEXT NOT NULL, lat INTEGER NOT NULL, lon INTEGER NOT NULL)",
+    "CREATE TABLE main.am_adr_jmena (n TEXT NOT NULL, obec INTEGER NOT NULL, PRIMARY KEY (n, obec)) WITHOUT ROWID",
+    "CREATE TABLE main.am_adr_psc (psc INTEGER NOT NULL, obec INTEGER NOT NULL, PRIMARY KEY (psc, obec)) WITHOUT ROWID",
+]
+INDEXY_ADRES = [
+    "CREATE INDEX main.i_adr_ulice ON am_adr (ulice, cd) WHERE ulice > 0",
+    "CREATE INDEX main.i_adr_cast ON am_adr (cast_obce, cd)",
+    "CREATE INDEX main.i_adr_poloha ON am_adr (lat, lon)",
+    "CREATE INDEX main.i_adr_obce_n ON am_adr_obce (n)",
+    "CREATE INDEX main.i_adr_casti_n ON am_adr_casti (n)",
+    "CREATE INDEX main.i_adr_casti_obec ON am_adr_casti (obec)",
+    "CREATE INDEX main.i_adr_ulice_k ON am_adr_ulice (obec, k)",
+]
+# Obecná slova a tituly v názvech ulic – stejně jako AM_ADR_OBECNE a AM_ADR_TITULY v lib/geo.php aplikace.
+ADR_OBECNE = {'trida', 'tr', 'namesti', 'nam', 'nm', 'ulice', 'ul', 'nabrezi', 'nabr', 'sidliste', 'sidl'}
+ADR_TITULY = {'sv', 'svateho', 'svate', 'gen', 'generala', 'kpt', 'kapitana', 'dr', 'doktora', 'prof', 'profesora', 'mjr', 'majora',
+              'plk', 'plukovnika', 'npor', 'por', 'ppor', 'arch', 'ing', 'mudr', 'judr', 'br', 'bratri', 'bri'}
+RE_SLOVA = re.compile(r'[a-z0-9]+')
+
+
+def adr_klic(n):
+    """adrKlic() z lib/geo.php: poslední významné slovo názvu ulice („nám. T. G. Masaryka“ → masaryka)."""
+    t = RE_SLOVA.findall(n)
+    v = [x for x in t if x not in ADR_OBECNE and x not in ADR_TITULY and len(x) > 1 and not x.isdigit()]
+    if not v:
+        v = [x for x in t if len(x) > 1 and not x.isdigit()]
+    return v[-1] if v else ''
+
+
+def adresy_vse(db, cesta):
+    """Všechna adresní místa s polohou + názvy ulic, částí obcí a obcí (se středem podle jejich adres)."""
+    for sql in TABULKY_ADRES:
+        db.execute(sql)
+    ins = 'INSERT OR IGNORE INTO am_adr (kod, ulice, cast_obce, cd, co, ev, psc, lat, lon) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    obce, casti, ulice, jmena, psc = {}, {}, {}, set(), set()
+    davka = []
+
+    def pridej(d, k, zaklad, la, lo):                 # součet poloh a počet adres → střed obce / části / ulice
+        v = d.setdefault(k, zaklad + [0, 0, 0])
+        v[-3] += la; v[-2] += lo; v[-1] += 1
+    with zipfile.ZipFile(cesta) as z:
+        for info in z.infolist():
+            obsah = z.read(info)
+            if not obsah:
+                continue
+            pos = obsah.find(b'\n')
+            for b in obsah[pos + 1:].split(b'\n'):
+                c = [cp1250(x) for x in b.rstrip(b'\r').split(b';')]
+                if len(c) < 18:
+                    continue
+                kod, obec, cast = php_int(c[0]), php_int(c[1]), php_int(c[7])
+                y, x = php_float(c[16]), php_float(c[17])
+                if kod <= 0 or obec <= 0 or cast <= 0 or y < 1000 or x < 1000:
+                    continue
+                lat, lon = jtsk_na_wgs(y, x)
+                la, lo = round(lat * 1e6), round(lon * 1e6)
+                ul = php_int(c[9]) if c[10].strip() else 0
+                pridej(obce, obec, [c[2].strip()], la, lo)
+                pridej(casti, cast, [obec, c[8].strip()], la, lo)
+                if ul > 0:
+                    pridej(ulice, ul, [obec, c[10].strip()], la, lo)
+                for jm in (c[4], c[6]):                         # městská část / obvod („Brno-Židenice“, „Praha 4“)
+                    if jm.strip():
+                        jmena.add((norm(jm), obec))
+                p = php_int(c[15])
+                if p > 0:
+                    psc.add((p, obec))
+                davka.append((kod, ul, cast, php_int(c[12]), c[13].strip() + c[14].strip(), 1 if c[11].startswith('č.ev') else 0, p, la, lo))
+                if len(davka) >= 100000:
+                    db.executemany(ins, davka); davka = []
+    db.executemany(ins, davka)
+    stred = lambda v: (round(v[-3] / v[-1]), round(v[-2] / v[-1]))
+    db.executemany('INSERT INTO am_adr_obce VALUES (?, ?, ?, ?, ?, ?)', [(k, v[0], norm(v[0])) + stred(v) + (v[-1],) for k, v in obce.items()])   # pocet adres: větší obec stejného jména má přednost
+    db.executemany('INSERT INTO am_adr_casti VALUES (?, ?, ?, ?, ?, ?)', [(k, v[0], v[1], norm(v[1])) + stred(v) for k, v in casti.items()])
+    db.executemany('INSERT INTO am_adr_ulice VALUES (?, ?, ?, ?, ?, ?, ?)', [(k, v[0], v[1], norm(v[1]), adr_klic(norm(v[1]))) + stred(v) for k, v in ulice.items()])
+    db.executemany('INSERT INTO am_adr_jmena VALUES (?, ?)', sorted(jmena))
+    db.executemany('INSERT INTO am_adr_psc VALUES (?, ?)', sorted(psc))
+    for sql in INDEXY_ADRES:
+        db.execute(sql)
+    return db.execute('SELECT COUNT(*) FROM am_adr').fetchone()[0]
+
+
 def tri_roky_zpet(d):
     try:
         return d.replace(year=d.year - COI_LET)
@@ -612,6 +711,10 @@ def postav(cil, res, ros, adr, coi, cas=None):
     db.execute('COMMIT')
     info['adr_soubor'] = os.path.basename(adr)
     log('adres s provozovnou', info['adr_ulozeno'])
+    db.execute('BEGIN')
+    info['adresy'] = adresy_vse(db, adr)
+    db.execute('COMMIT')
+    log('adresních míst celkem', info['adresy'])
     if coi and os.path.isfile(coi):
         db.execute('BEGIN')
         info['coi_ulozeno'], info['coi_radku'], info['coi_chyba'] = kontroly_coi(db, coi, dnes_d)
@@ -771,8 +874,8 @@ if __name__ == '__main__':
         # python3 registr.py postav STAZENE VYSTUP: stáhne, co chybí, postaví, zkontroluje a zabalí (potřebuje BALIK_KLIC)
         klic = klic_z_prostredi()
         soubor, info = postav(os.path.join(a[2], 'prace'), *stahni_zdroje(a[1]))
-        if not os.environ.get('MALY_TEST') and (info['ulozeno'] < 300000 or info['prov_ulozeno'] < 200000 or info['adr_ulozeno'] < 100000):
-            raise SystemExit(f'podezřele málo dat (firem {info["ulozeno"]}, provozoven {info["prov_ulozeno"]}, adres {info["adr_ulozeno"]}) – registr se nezveřejní')
+        if not os.environ.get('MALY_TEST') and (info['ulozeno'] < 300000 or info['prov_ulozeno'] < 200000 or info['adr_ulozeno'] < 100000 or info['adresy'] < 2500000):
+            raise SystemExit(f'podezřele málo dat (firem {info["ulozeno"]}, provozoven {info["prov_ulozeno"]}, adres {info["adr_ulozeno"]}, adresních míst {info["adresy"]}) – registr se nezveřejní')
         zabal(soubor, info, a[2], klic)
         rozbal(a[2], klic, os.path.join(a[2], 'prace', 'kontrola.sqlite'))
     elif len(a) == 6 and a[0] == 'soubory':

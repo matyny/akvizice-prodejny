@@ -42,6 +42,9 @@ a pravidla jako aplikace (`lib/res.php`, `lib/provozovny.php`). Aplikace si ho j
 - Když se v aplikaci změní tabulky registru nebo pravidla jeho stavby, musí se stejně změnit `registr.py` a zvýšit `REG_FORMAT`
   (v aplikaci `AM_REG_FORMAT`) – aplikace jiný formát nepřijme a postaví si registr sama.
 - Stažené soubory registrů nechává `zdroje.py registr` ve složce `stazene/`, `registr.py` z nich staví (co chybí, stáhne sám).
+- Registr obsahuje i **všechna adresní místa Česka** (tabulky `am_adr*`, asi 3 mil. adres, ~230 MB v souboru): aplikace podle nich
+  hledá polohu adres a adresu u prodejny sama, bez dotazů ven. Tabulky jsou navíc – aplikace, která je nezná, je jen nepoužije
+  (formát se nemění). Klíč ulice a obecná slova musí sedět s `lib/geo.php` (`adrKlic`, `AM_ADR_OBECNE`, `AM_ADR_TITULY`).
 
 Data © přispěvatelé OpenStreetMap (ODbL 1.0); Overture Maps Foundation (CDLA Permissive 2.0 / Apache 2.0);
 Foursquare OS Places (Apache 2.0, NOTICE se přikládá k vydání jako `NOTICE-foursquare.txt`);
